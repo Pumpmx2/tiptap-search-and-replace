@@ -65,6 +65,10 @@ declare module "@tiptap/core" {
        * @description Replace all instances of search result with given replace term.
        */
       replaceAll: () => ReturnType;
+      /**
+       * @description Set whole word in extension.
+       */
+      setWholeWord: (wholeWord: boolean) => ReturnType;
     };
   }
 }
@@ -78,11 +82,19 @@ const getRegex = (
   s: string,
   disableRegex: boolean,
   caseSensitive: boolean,
+  wholeWord: boolean,
 ): RegExp => {
-  return RegExp(
-    disableRegex ? s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") : s,
-    caseSensitive ? "gu" : "gui",
-  );
+  let pattern = s;
+  
+  if (disableRegex) {
+    pattern = s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+  
+  if (wholeWord) {
+    pattern = `\\b${pattern}\\b`;
+  }
+
+  return RegExp(pattern, caseSensitive ? "gu" : "gui");
 };
 
 interface ProcessedSearches {
@@ -233,7 +245,7 @@ const replaceAll = (
     resultsCopy = rebaseNextResultResponse[1];
   }
 
-  dispatch(tr);
+  dispatch?.(tr);
 };
 
 export const searchAndReplacePluginKey = new PluginKey(
@@ -254,6 +266,8 @@ export interface SearchAndReplaceStorage {
   lastCaseSensitive: boolean;
   resultIndex: number;
   lastResultIndex: number;
+  wholeWord: boolean;
+  lastWholeWord: boolean;
 }
 
 export const SearchAndReplace = Extension.create<
@@ -279,6 +293,8 @@ export const SearchAndReplace = Extension.create<
       lastCaseSensitive: false,
       resultIndex: 0,
       lastResultIndex: 0,
+      wholeWord: false,
+      lastWholeWord: false,
     };
   },
 
@@ -360,6 +376,12 @@ export const SearchAndReplace = Extension.create<
 
           return false;
         },
+      setWholeWord:
+        (wholeWord: boolean) =>
+        ({ editor }) => {
+          editor.storage.searchAndReplace.wholeWord = wholeWord;
+          return false;
+        },
     };
   },
 
@@ -373,6 +395,8 @@ export const SearchAndReplace = Extension.create<
       (editor.storage.searchAndReplace.lastCaseSensitive = t);
     const setLastResultIndex = (t: number) =>
       (editor.storage.searchAndReplace.lastResultIndex = t);
+    const setLastWholeWord = (t: boolean) =>
+      (editor.storage.searchAndReplace.lastWholeWord = t);
 
     return [
       new Plugin({
@@ -387,19 +411,23 @@ export const SearchAndReplace = Extension.create<
               lastCaseSensitive,
               resultIndex,
               lastResultIndex,
+              wholeWord,
+              lastWholeWord,
             } = editor.storage.searchAndReplace;
 
             if (
               !docChanged &&
               lastSearchTerm === searchTerm &&
               lastCaseSensitive === caseSensitive &&
-              lastResultIndex === resultIndex
+              lastResultIndex === resultIndex &&
+              lastWholeWord === wholeWord
             )
               return oldState;
 
             setLastSearchTerm(searchTerm);
             setLastCaseSensitive(caseSensitive);
             setLastResultIndex(resultIndex);
+            setLastWholeWord(wholeWord);
 
             if (!searchTerm) {
               editor.storage.searchAndReplace.results = [];
@@ -408,7 +436,7 @@ export const SearchAndReplace = Extension.create<
 
             const { decorationsToReturn, results } = processSearches(
               doc,
-              getRegex(searchTerm, disableRegex, caseSensitive),
+              getRegex(searchTerm, disableRegex, caseSensitive, wholeWord),
               searchResultClass,
               resultIndex,
             );
